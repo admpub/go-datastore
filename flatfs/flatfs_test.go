@@ -8,12 +8,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/jbenet/go-datastore"
-	"github.com/jbenet/go-datastore/flatfs"
-	"github.com/jbenet/go-datastore/query"
-	dstest "github.com/jbenet/go-datastore/test"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/flatfs"
+	"github.com/ipfs/go-datastore/query"
+	dstest "github.com/ipfs/go-datastore/test"
 
-	rand "github.com/jbenet/go-datastore/Godeps/_workspace/src/github.com/dustin/randbo"
+	rand "github.com/dustin/randbo"
 )
 
 func tempdir(t testing.TB) (path string, cleanup func()) {
@@ -152,8 +152,8 @@ func TestStorage(t *testing.T) {
 	defer cleanup()
 
 	const prefixLen = 2
-	const prefix = "7175"
-	const target = prefix + string(os.PathSeparator) + "71757578.data"
+	const prefix = "qu"
+	const target = prefix + string(os.PathSeparator) + "quux.data"
 	fs, err := flatfs.New(temp, prefixLen, false)
 	if err != nil {
 		t.Fatalf("New fail: %v\n", err)

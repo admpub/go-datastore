@@ -4,7 +4,6 @@
 package flatfs
 
 import (
-	"encoding/hex"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -13,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jbenet/go-datastore"
-	"github.com/jbenet/go-datastore/Godeps/_workspace/src/github.com/jbenet/go-os-rename"
-	"github.com/jbenet/go-datastore/query"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
+	"github.com/jbenet/go-os-rename"
 
-	logging "github.com/jbenet/go-datastore/Godeps/_workspace/src/github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log"
 )
 
 var log = logging.Logger("flatfs")
@@ -33,8 +32,8 @@ var (
 
 type Datastore struct {
 	path string
-	// length of the dir splay prefix, in bytes of hex digits
-	hexPrefixLen int
+	// length of the dir splay prefix
+	prefixLen int
 
 	// sychronize all writes and directory changes for added safety
 	sync bool
@@ -47,21 +46,20 @@ func New(path string, prefixLen int, sync bool) (*Datastore, error) {
 		return nil, ErrBadPrefixLen
 	}
 	fs := &Datastore{
-		path: path,
-		// convert from binary bytes to bytes of hex encoding
-		hexPrefixLen: prefixLen * hex.EncodedLen(1),
-		sync:         sync,
+		path:      path,
+		prefixLen: prefixLen,
+		sync:      sync,
 	}
 	return fs, nil
 }
 
-var padding = strings.Repeat("_", maxPrefixLen*hex.EncodedLen(1))
+var padding = strings.Repeat("_", maxPrefixLen)
 
 func (fs *Datastore) encode(key datastore.Key) (dir, file string) {
-	safe := hex.EncodeToString(key.Bytes()[1:])
-	prefix := (safe + padding)[:fs.hexPrefixLen]
+	noslash := key.String()[1:]
+	prefix := (noslash + padding)[:fs.prefixLen]
 	dir = path.Join(fs.path, prefix)
-	file = path.Join(dir, safe+extension)
+	file = path.Join(dir, noslash+extension)
 	return dir, file
 }
 
@@ -70,11 +68,7 @@ func (fs *Datastore) decode(file string) (key datastore.Key, ok bool) {
 		return datastore.Key{}, false
 	}
 	name := file[:len(file)-len(extension)]
-	k, err := hex.DecodeString(name)
-	if err != nil {
-		return datastore.Key{}, false
-	}
-	return datastore.NewKey(string(k)), true
+	return datastore.NewKey(name), true
 }
 
 func (fs *Datastore) makePrefixDir(dir string) error {
@@ -124,7 +118,7 @@ func (fs *Datastore) Put(key datastore.Key, value interface{}) error {
 			return err
 		}
 
-		log.Error("too many open files, retrying in %dms", 100*i)
+		log.Errorf("too many open files, retrying in %dms", 100*i)
 		time.Sleep(time.Millisecond * 100 * time.Duration(i))
 	}
 	return err
@@ -315,12 +309,19 @@ func (fs *Datastore) Query(q query.Query) (query.Results, error) {
 		return nil, errors.New("flatfs only supports listing all keys in random order")
 	}
 
-	reschan := make(chan query.Result)
+	reschan := make(chan query.Result, query.KeysOnlyBufSize)
 	go func() {
 		defer close(reschan)
 		err := filepath.Walk(fs.path, func(path string, info os.FileInfo, err error) error {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			if err != nil {
+				log.Errorf("Walk func in Query got error: %v", err)
+				return err
+			}
 
-			if !info.Mode().IsRegular() || info.Name()[0] == '.' {
+			if !info.Mode().IsRegular() || strings.HasPrefix(info.Name(), ".") {
 				return nil
 			}
 
